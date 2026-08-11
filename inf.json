@@ -1,12 +1,12 @@
 {
   "name": "ktextextractor",
   "author": "kriaiss",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "text extractor using system frameworks",
   "dependencies": [
-    "pyqt6",
     "pyobjc-framework-cocoa",
     "pyobjc-framework-quartz",
-    "pyobjc-framework-vision"
+    "pyobjc-framework-vision",
+    "pyqt6"
   ]
 }

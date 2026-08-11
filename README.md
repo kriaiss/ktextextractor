@@ -9,7 +9,7 @@
     </pre>
 </div>
 <p align="center">
-    OCR plugin for ktools.
+    Native OCR plugin for ktools.
 </p>
 <p align="center">
     <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
@@ -18,51 +18,26 @@
 
 ⠀
 
-# what is this?
+## What is ktextextractor?
 
-ktextextractor is the flagship OCR plugin for ktools. it leverages Apple’s native Vision framework to pull text out of anything on ur screen. no cloud APIs, no privacy leaks—just pure local machine learning goodness.
+`ktextextractor` is an OCR (Optical Character Recognition) plugin for `ktools`. It lets you instantly grab unselectable text from images, videos, or protected documents anywhere on your screen.
 
-### features
-
-* native vision framework: utilizes VNRecognizeTextRequest under the hood. it's fast, accurate, and runs entirely on the Apple Neural Engine.
-* multi-language support: detects English, Russian, Chinese, Spanish, German, French, Italian, Japanese, and Korean out of the box.
-* headless extraction: select, grab, copy. no UI clutter.
-* async lifecycle: OCR runs in a background thread so ur main app won't hang during heavy analysis.
+### Core Features
+* **Vision Framework**: Leverages Apple's native machine learning framework (`VNRecognizeTextRequest`) to extract text locally and instantly. No cloud APIs, no privacy leaks.
+* **Headless Extraction**: Select an area on your screen and the text is copied automatically. No UI bloat or popups.
+* **Global Hotkeys**: Always ready in the background via a system-wide macOS shortcut.
 
 ⠀
 
-# how to use
+## How to Use (For Users)
 
-### 1. summoning the tool
-
-just hit
-
-```
-⌥⌘X (option + command + x)
-```
-
-global event monitors capture this shortcut anywhere in the OS.
-
-### 2. interaction
-
-* ur cursor turns into the selection crosshair.
-* define the region.
-* ktextextractor immediately performs OCR on that crop and spits the result into ur clipboard.
-* u'll see a native ktools notification once the text is ready for cmd+v.
+1. Download the `ktextextractor` `.zip` archive from the Releases page.
+2. Open the **ktools Plugin Manager** from your menu bar and click **import plugins** to install it.
+3. *Note: `ktools` will automatically install the necessary `pyobjc-framework-vision` and `pyobjc-framework-quartz` dependencies in the background.*
+4. Press the global hotkey: `⌥⌘X` (Option + Command + X).
+5. Your cursor will turn into the native macOS selection crosshair. Drag over the text you want to extract.
+6. The OCR engine will process the image in the background and copy the raw text to your clipboard.
 
 ⠀
-
-### final thoughts
-
-this is the absolute final plugin in this set. i am completely drained and at my limit, so i’m taking a hard break. for the next week, i’m officially off the clock - i plan to do absolutely nothing productive and stay as far away from keyboards as humanly possible. my wrists have officially declared a state of emergency.
-
-also, along with all the plugin dependencies, i’ve accidentally picked up a serious caffeine dependency. absolutely love my life.
-
-and one more thing: notice how the naming convention got progressively worse and more unhinged with each plugin? the later i wrote it, the longer and more cursed the name became. i’m clearly losing it. live with it, lol.
-
-want more final thoughts? i not.
 
 by kriaiss.
-
-this is 67 line lol
-676767676767676767

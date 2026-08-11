@@ -1,6 +1,7 @@
 import subprocess
 import os
 import tempfile
+import gc
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer, QThread, pyqtSignal
@@ -15,18 +16,38 @@ class CaptureWorker(QThread):
 
     def __init__(self):
         super().__init__()
-        self.tmp_path = None
+        self.process = None
 
     def run(self):
+        tmp_path = ""
         try:
-            subprocess.run(["screencapture", "-i", self.tmp_path], check=True)
-            if os.path.exists(self.tmp_path) and os.path.getsize(self.tmp_path) > 0:
-                self.finished_signal.emit(self.tmp_path)
-            else:
-                self.error_signal.emit(self.tmp_path)
-        except subprocess.CalledProcessError:
-            self.error_signal.emit(self.tmp_path)
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                tmp_path = tmp.name
 
+            self.process = subprocess.Popen(["screencapture", "-i", tmp_path])
+            self.process.wait()
+            
+            if self.process.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+                self.finished_signal.emit(tmp_path)
+            else:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+                self.error_signal.emit("capture failed or aborted")
+        except Exception as e:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            self.error_signal.emit(str(e))
+    
+    def stop(self):
+        if self.process:
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=1)
+            except Exception:
+                self.process.kill()
+            self.process = None
+        self.quit()
+        self.wait()
 
 class Plugin:
     def __init__(self, ktools):
@@ -34,32 +55,69 @@ class Plugin:
         self.name = "ktextextractor"
         self.worker = None
         
-        def handler(event):
-            mask = (1 << 20) | (1 << 19)
-            if event.keyCode() == 7 and (event.modifierFlags() & mask) == mask:
-                QTimer.singleShot(0, self.extract_text)
-                return None
-            return event
-
-        self.global_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(NSKeyDownMask, handler)
-        self.local_monitor = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(NSKeyDownMask, handler)
+        self.global_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(NSKeyDownMask, self._global_hotkey_handler)
+        self.local_monitor = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(NSKeyDownMask, self._local_hotkey_handler)
         
-        self.action = QAction("open ktextextractor (⌥⌘X)", self.ktools.menu)
+        self.action = QAction("open ktextextractor (⌥⌘X)", self.ktools.manager)
         self.action.triggered.connect(self.extract_text)
+
+    def get_actions(self):
+        return [self.action]
+
+    def update_theme(self):
+        pass
+
+    def unload(self):
+        try:
+            if hasattr(self, 'global_monitor') and self.global_monitor:
+                NSEvent.removeMonitor_(self.global_monitor)
+                self.global_monitor = None
+            if hasattr(self, 'local_monitor') and self.local_monitor:
+                NSEvent.removeMonitor_(self.local_monitor)
+                self.local_monitor = None
+        except Exception: 
+            pass
+
+        if self.worker:
+            try:
+                self.worker.finished_signal.disconnect()
+                self.worker.error_signal.disconnect()
+            except Exception: 
+                pass
+            self.worker.stop()
+            self.worker.deleteLater()
+            self.worker = None
+
+        try:
+            self.action.triggered.disconnect()
+        except Exception: 
+            pass
+
+        # py garbage collector is asleep at the wheel, force collect or memory leaks into the void
+        gc.collect()
+
+    def _global_hotkey_handler(self, event):
+        mask = (1 << 20) | (1 << 19)
+        if event.keyCode() == 7 and (event.modifierFlags() & mask) == mask:
+            QTimer.singleShot(0, self.extract_text)
+
+    def _local_hotkey_handler(self, event):
+        mask = (1 << 20) | (1 << 19)
+        if event.keyCode() == 7 and (event.modifierFlags() & mask) == mask:
+            QTimer.singleShot(0, self.extract_text)
+            return None
+        return event
 
     def extract_text(self):
         if self.worker and self.worker.isRunning():
             return
 
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            tmp_path = tmp.name
+        if self.worker:
+            self.worker.deleteLater()
 
-        if not self.worker:
-            self.worker = CaptureWorker()
-            self.worker.finished_signal.connect(self._on_capture_success)
-            self.worker.error_signal.connect(self._on_capture_failed)
-
-        self.worker.tmp_path = tmp_path
+        self.worker = CaptureWorker()
+        self.worker.finished_signal.connect(self._on_capture_success)
+        self.worker.error_signal.connect(self._on_capture_failed)
         self.worker.start()
 
     def _on_capture_success(self, tmp_path):
@@ -67,23 +125,20 @@ class Plugin:
             text = self._recognize_text(tmp_path)
             if text:
                 QApplication.clipboard().setText(text)
-                print(f"ktextextractor: copied to clipboard")
                 QTimer.singleShot(200, lambda: self.ktools.notify("text copied to clipboard"))
             else:
-                print(f"ktextextractor: no text found.")
                 QTimer.singleShot(200, lambda: self.ktools.notify("no text found"))
         finally:
             self._clean_file(tmp_path)
 
     def _on_capture_failed(self, tmp_path):
-        print(f"ktextextractor: capture cancelled or empty.")
         self._clean_file(tmp_path)
 
     def _clean_file(self, tmp_path):
         if os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
-            except:
+            except Exception:
                 pass
 
     def _recognize_text(self, image_path):
@@ -119,54 +174,3 @@ class Plugin:
                 results.append(candidates[0].string())
         
         return "\n".join(results) if results else None
-    
-    def _vision_completion(self, request, error):
-        if error:
-            print(f"ktextextractor: vision error: {error}")
-            return
-        observations = request.results()
-        if observations:
-            for observation in observations:
-                top_candidate = observation.topCandidates_(1)[0]
-                self._ocr_results.append(top_candidate.string())
-
-    def unload(self):
-        try:
-            if hasattr(self, 'global_monitor'):
-                NSEvent.removeMonitor_(self.global_monitor)
-                self.global_monitor = None
-            if hasattr(self, 'local_monitor'):
-                NSEvent.removeMonitor_(self.local_monitor)
-                self.local_monitor = None
-        except: pass
-
-        if self.worker:
-            try:
-                self.worker.finished_signal.disconnect()
-                self.worker.error_signal.disconnect()
-            except: pass
-            if self.worker.isRunning():
-                self.worker.terminate()
-                self.worker.wait()
-            self.worker = None
-
-        try:
-            self.action.triggered.disconnect()
-        except: pass
-
-        import gc
-        gc.collect()
-        print("ktextextractor: reloaded")
-
-    def _hotkey_handler(self, event):
-        mask = (1 << 20) | (1 << 19)
-        if event.keyCode() == 7 and (event.modifierFlags() & mask) == mask:
-            QTimer.singleShot(0, self.extract_text)
-            return None
-        return event
-
-    def update_theme(self):
-        pass
-
-    def get_actions(self):
-        return [self.action]
